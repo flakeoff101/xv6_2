@@ -66,6 +66,12 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  
+  //Stuff for threads
+  char thread;                 // Simple indicator if thread
+  char joined;                 // Indicates if a thread is waiting for this one to exit
+  void* ret_val;               // Return value of this thread
+  
 };
 
 // Process memory is laid out contiguously, low addresses first:

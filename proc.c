@@ -463,3 +463,106 @@ procdump(void)
     cprintf("\n");
   }
 }
+
+//New system calls
+
+//clone mostly copied from fork
+int
+clone( void *(*func_ptr)(void*), void* argv, void* new_stack ) {
+  int i, pid;
+  struct proc *np;
+  int* esp;
+
+  // Allocate process.
+  if((np = allocproc()) == 0)
+    return -1;
+  
+ //THREAD STUFF
+ //Change stack to one provided by user,  page table to same as old process
+  np->pgdir = proc->pgdir;
+  np->sz = 4096;
+  np->parent = proc;
+  np->thread = 1;
+  *np->tf = *proc->tf;
+  
+  esp = (int*)((char*)new_stack + 4095);    //set tf-esp to new stack
+  *esp = 0xFFFFFFFF;                //push return to 0xFFFFFFFF
+  esp--;                         
+  
+  *esp = (int)func_ptr;             //push onto new stack pointer to function
+  esp--;
+  
+  *esp = (int)argv;                 //push function arg onto stack
+  esp--;
+  
+  np->tf->esp = (int)esp;
+  np->tf->ebp = (int)esp + 12;
+  np->tf->eip = np->tf->esp + 8;  //set instruction pointer to function call
+
+  //END THREAD STUFF
+ 
+  for(i = 0; i < NOFILE; i++)
+    if(proc->ofile[i])
+      np->ofile[i] = filedup(proc->ofile[i]);
+  np->cwd = idup(proc->cwd);
+  
+  safestrcpy(np->name, proc->name, sizeof(proc->name));
+  
+  pid = np->pid;
+
+  // lock to force the compiler to emit the np->state write last.
+  acquire(&ptable.lock);
+  np->state = RUNNABLE;
+  release(&ptable.lock);
+  return pid;
+}
+
+// Similar to wait() call but don't want to free kernel stack or page table
+int
+join(int pid, void** stack, void** ret_val) {
+  struct proc* p;
+  int havekids = 0;
+  acquire(&ptable.lock);
+  for(;;) {
+    
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->thread != 1)
+        continue;
+      if(p->parent != proc || p->pid != pid)
+        continue;
+      havekids = 1;
+      if(p->state == ZOMBIE){
+        // Found one.
+        *ret_val = p->ret_val;
+        p->state = UNUSED;
+        p->pid = 0;
+        p->parent = 0;
+        p->name[0] = 0;
+        p->killed = 0;
+        release(&ptable.lock);
+        return 0;
+      }
+    }
+    
+    if(!havekids || proc->killed){
+      release(&ptable.lock);
+      return -1;
+    }
+    
+    sleep(proc, &ptable.lock);
+  }
+    return -1;
+}
+
+//Sets ret_value and state to ZOMBIE and wakes up potentially sleeping parent.
+//Threads that aren't joined on by parent should be cleaned up by exit()
+int
+texit(void* ret_val) {
+    proc->ret_val = ret_val;
+    acquire(&ptable.lock);
+    wakeup1(proc->parent);
+    proc->state = ZOMBIE;
+    sched();
+    panic("zombie exit");
+    return 0;
+}

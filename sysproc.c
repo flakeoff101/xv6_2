@@ -102,3 +102,37 @@ sys_halt(void)
     outw(0xB004, 0x2000);
   return 0;
 }
+
+//New stuff for threads
+int
+sys_clone(void)
+{
+    int func, arg, stack, pid;
+    argint(0, &func);
+    argint(1, &arg);
+    argint(2, &stack);
+    
+    pid = clone( (void *(*)(void*))func, (void*)arg, (void*)stack );
+    return pid;
+}
+
+int
+sys_join(void)
+{
+    int pid, stack, ret_val, result;
+    argint(0, &pid);
+    argint(1, &stack);
+    argint(2, &ret_val);
+    
+    result = join(pid, (void**)stack, (void**)ret_val);
+    return result;
+}
+
+int
+sys_texit(void)
+{
+    int ret_val, result;
+    argint(0, &ret_val);
+    result = texit((void*)ret_val);
+    return result;
+}
